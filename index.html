@@ -122,6 +122,13 @@ tr.rank1 td,tr.rank2 td,tr.rank3 td{font-weight:600}
 .kpi .b .v{font-size:1.7em;font-weight:bold;color:var(--navy);line-height:1}
 .kpi .b .l{font-size:.76em;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.4px}
 
+.puntos-grid{display:flex;gap:12px;flex-wrap:wrap}
+.pchip{flex:1;min-width:160px;display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#f4f8fd,#eaf2fb);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.pchip .pv{font-size:1.4em;font-weight:bold;color:#fff;background:var(--grad);min-width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pchip .pl{font-size:.9em;font-weight:bold;color:var(--navy);line-height:1.15}
+.pchip .pd{font-size:.74em;color:var(--muted);margin-top:2px}
+.pchip.oro .pv{background:linear-gradient(135deg,#ffd95e,#f5b301);color:#5a4500}
+
 .lock{background:#fff7d6;border:1px solid #f0dd9b;color:#6a5200;border-radius:12px;padding:10px 13px;font-size:.9em;margin:8px 0}
 .muted{color:var(--muted);font-size:.88em}
 .hide{display:none !important}
@@ -195,6 +202,10 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
 <!-- ============ TABLA ============ -->
 <section id="tabla" class="view">
   <div class="wrap">
+    <div class="card" id="puntajeCard">
+      <h2>🎯 Cómo se puntúa</h2>
+      <div id="puntajeInfo" class="puntos-grid"></div>
+    </div>
     <div class="card">
       <h2>📊 Tabla acumulada — en vivo</h2>
       <p class="sub">Puntos de la fase de grupos + cada fase final. Se actualiza solo cuando el organizador captura un marcador.</p>
@@ -427,10 +438,17 @@ const Store = {
   // --- Supabase: leer config + preds y avisar solo si cambió ---
   async _sbFetch(first){
     try{
-      const [{data:cd}, {data:pd}] = await Promise.all([
+      const [rc, rp] = await Promise.all([
         this.sb.from("quiniela_config").select("data").eq("id","config").maybeSingle(),
         this.sb.from("quiniela_preds").select("id,data"),
       ]);
+      if (rc.error || rp.error){
+        const err = rc.error || rp.error;
+        console.error("Supabase LECTURA falló:", err);
+        nubeProblema("No puedo leer de la nube: " + (err.message||err) + " — revisa que corriste el SQL de las tablas.");
+        return;
+      }
+      const cd = rc.data, pd = rp.data;
       const nuevoCfg = cd?.data || (first ? configInicial() : cfg);
       if (first && !cd){ await this.saveConfig(nuevoCfg); }
       const nuevoPreds = {}; (pd||[]).forEach(r=>{ nuevoPreds[r.id]=r.data; });
@@ -442,34 +460,47 @@ const Store = {
       this._cfgCb(cfg, !cfgCambioEstructura);        // 2º arg: evitar repintar inputs si solo cambió la tabla
     }catch(e){ console.warn("sondeo Supabase:", e); }
   },
+  // ejecuta una operación de escritura y LANZA error si la nube la rechaza (no falla en silencio)
+  async _sbWrite(op){
+    const { error } = await op;
+    if (error){ console.error("Supabase ESCRITURA falló:", error);
+      throw new Error("La nube rechazó el guardado: " + (error.message||error) + ". ¿Corriste el SQL que quita el candado (RLS) de las tablas?"); }
+  },
 
   onConfig(cb){ this._cfgCb = cb; if (cfg) cb(cfg); },
   onPreds(cb){ this._predsCb = cb; cb(preds); },
 
   async saveConfig(c){
     cfg = c;
-    if (this.mode==="supabase"){ this._sig=""; await this.sb.from("quiniela_config").upsert({id:"config", data:c}); this._cfgCb(c); }
+    if (this.mode==="supabase"){ this._sig=""; await this._sbWrite(this.sb.from("quiniela_config").upsert({id:"config", data:c})); this._cfgCb(c); }
     else if (this.mode==="firebase"){ await this.fs.setDoc(this.fs.doc(this.db,"quiniela2026","config"), c); }
     else { localStorage.setItem(LSC, JSON.stringify(c)); this._cfgCb(c); }
   },
   async savePred(id, p){
-    if (this.mode==="supabase"){ this._sig=""; await this.sb.from("quiniela_preds").upsert({id, data:p}); preds[id]=p; this._predsCb(preds); }
+    if (this.mode==="supabase"){ this._sig=""; await this._sbWrite(this.sb.from("quiniela_preds").upsert({id, data:p})); preds[id]=p; this._predsCb(preds); }
     else if (this.mode==="firebase"){ await this.fs.setDoc(this.fs.doc(this.db,"quiniela2026_preds",id), p); }
     else { preds[id]=p; localStorage.setItem(LSP, JSON.stringify(preds)); this._predsCb(preds); }
   },
   async delPred(id){
-    if (this.mode==="supabase"){ this._sig=""; await this.sb.from("quiniela_preds").delete().eq("id",id); delete preds[id]; this._predsCb(preds); }
+    if (this.mode==="supabase"){ this._sig=""; await this._sbWrite(this.sb.from("quiniela_preds").delete().eq("id",id)); delete preds[id]; this._predsCb(preds); }
     else if (this.mode==="firebase"){ await this.fs.deleteDoc(this.fs.doc(this.db,"quiniela2026_preds",id)); delete preds[id]; this._predsCb(preds); }
     else { delete preds[id]; localStorage.setItem(LSP, JSON.stringify(preds)); this._predsCb(preds); }
   },
   // guarda sin disparar re-render completo (para captura de marcadores en vivo)
   async persist(c){
     cfg = c;
-    if (this.mode==="supabase"){ this._sig=""; await this.sb.from("quiniela_config").upsert({id:"config", data:c}); }
+    if (this.mode==="supabase"){ this._sig=""; await this._sbWrite(this.sb.from("quiniela_config").upsert({id:"config", data:c})); }
     else if (this.mode==="firebase"){ await this.fs.setDoc(this.fs.doc(this.db,"quiniela2026","config"), c); }
     else { localStorage.setItem(LSC, JSON.stringify(c)); }
   },
 };
+// aviso visible cuando la nube falla (no dejar al usuario a ciegas)
+function nubeProblema(txt){
+  const el = document.getElementById("conexion"), t = document.getElementById("conexionTxt");
+  if (el){ el.classList.add("local"); }
+  if (t){ t.textContent = "⚠ Nube con problema"; }
+  console.error("QUINIELA:", txt);
+}
 // firma de lo que afecta la vista "Participar" (fase abierta, cierre y cruces)
 function estructuraParticipar(c){
   if (!c) return "";
@@ -739,8 +770,19 @@ function renderMiResumen(){
 /* ============================================================
    VISTA: TABLA EN VIVO
    ============================================================ */
+function renderPuntajeInfo(){
+  const cont = document.getElementById("puntajeInfo"); if(!cont || !cfg) return;
+  const p = cfg.puntos[cfg.faseActual] || PUNTOS_DEFAULT["16avos"];
+  const camp = cfg.bonos?.campeon?.pts ?? 5;
+  cont.innerHTML = `
+    <div class="pchip"><span class="pv">${p.exacto}</span><span><span class="pl">Marcador exacto</span><span class="pd">aciertas el resultado 90′ tal cual</span></span></div>
+    <div class="pchip"><span class="pv">${p.resultado}</span><span><span class="pl">Resultado (90′)</span><span class="pd">aciertas quién gana o el empate, sin el marcador exacto</span></span></div>
+    <div class="pchip"><span class="pv">${p.avanza}</span><span><span class="pl">Quién avanza</span><span class="pd">aciertas el clasificado (prórroga/penales)</span></span></div>
+    <div class="pchip oro"><span class="pv">${camp}</span><span><span class="pl">Campeón</span><span class="pd">si acertaste el campeón en la fase de grupos</span></span></div>`;
+}
 function renderTabla(){
   if (!cfg) return;
+  renderPuntajeInfo();
   const lb = leaderboard();
   const fk = cfg.faseActual;
   document.getElementById("thFase").textContent = FASE[fk].nombre;
@@ -834,8 +876,8 @@ document.getElementById("admResultados").addEventListener("input", async ev=>{
   const c={...cfg}; c.resultados[fk] ??= {}; c.resultados[fk][id] ??= {gh:"",ga:"",avanza:""};
   c.resultados[fk][id][el.dataset.s] = el.value===""?"":+el.value;
   el.classList.toggle("filled", el.value!=="");
-  await Store.persist(c);
-  renderTabla(); renderMiResumen(); renderAdminParticipantes();
+  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); }
+  catch(e){ alert(e.message); }
 });
 document.getElementById("admResultados").addEventListener("click", async ev=>{
   const b=ev.target.closest("button[data-av]"); if(!b) return;
@@ -843,8 +885,8 @@ document.getElementById("admResultados").addEventListener("click", async ev=>{
   const c={...cfg}; c.resultados[fk] ??= {}; c.resultados[fk][id] ??= {gh:"",ga:"",avanza:""};
   c.resultados[fk][id].avanza = b.dataset.av;
   b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel");
-  await Store.persist(c);
-  renderTabla(); renderMiResumen(); renderAdminParticipantes();
+  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); }
+  catch(e){ alert(e.message); }
 });
 
 // ---- Cargar fase de grupos desde los .json (pronósticos + respaldo con marcadores) ----
