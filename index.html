@@ -883,8 +883,10 @@ document.getElementById("admResultados").addEventListener("click", async ev=>{
   const b=ev.target.closest("button[data-av]"); if(!b) return;
   const fk=admFaseVista, id=b.dataset.id;
   const c={...cfg}; c.resultados[fk] ??= {}; c.resultados[fk][id] ??= {gh:"",ga:"",avanza:""};
-  c.resultados[fk][id].avanza = b.dataset.av;
-  b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel");
+  const yaEstaba = c.resultados[fk][id].avanza === b.dataset.av;
+  c.resultados[fk][id].avanza = yaEstaba ? "" : b.dataset.av;   // volver a tocar = quitar selección
+  b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("sel"));
+  if (!yaEstaba) b.classList.add("sel");
   try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); }
   catch(e){ alert(e.message); }
 });
