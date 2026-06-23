@@ -129,6 +129,25 @@ tr.rank1 td,tr.rank2 td,tr.rank3 td{font-weight:600}
 .pchip .pd{font-size:.74em;color:var(--muted);margin-top:2px}
 .pchip.oro .pv{background:linear-gradient(135deg,#ffd95e,#f5b301);color:#5a4500}
 
+/* ---------- llave / clasificados ---------- */
+.llave-cols{display:flex;gap:14px;overflow-x:auto;padding:4px 2px 10px}
+.llave-col{flex:0 0 240px;min-width:240px}
+.llave-col h3{margin:0 0 10px;font-size:.84em;text-transform:uppercase;letter-spacing:.6px;color:#fff;background:var(--grad);padding:9px 12px;border-radius:10px;text-align:center}
+.mb{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px;margin-bottom:10px;box-shadow:var(--shadow-sm)}
+.mb .row{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;font-weight:bold;font-size:.92em;color:#56657a}
+.mb .row .s{min-width:24px;height:24px;border-radius:7px;background:#eef3f9;display:inline-flex;align-items:center;justify-content:center;font-size:.9em}
+.mb .row.win{background:linear-gradient(135deg,#eafaf0,#d8f5e4);color:#0a6b39}
+.mb .row.win .t::after{content:" ✓";color:var(--ok)}
+.mb .row.win .s{background:var(--ok);color:#fff}
+.mb.pend{padding:14px 10px;text-align:center;color:#aeb8c6;font-style:italic;font-size:.88em}
+.champ{background:linear-gradient(135deg,#ffd95e,#f5b301);color:#5a4500;border-radius:14px;padding:14px 18px;font-weight:bold;font-size:1.15em;text-align:center;margin-bottom:16px;box-shadow:0 6px 18px rgba(245,179,1,.4)}
+
+/* ---------- animaciones de entrada (un solo disparo) ---------- */
+@keyframes rowin{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes colin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+#tTabla.animar tbody tr{animation:rowin .4s ease both}
+.llave-cols.animar .llave-col{animation:colin .45s ease both}
+
 .lock{background:#fff7d6;border:1px solid #f0dd9b;color:#6a5200;border-radius:12px;padding:10px 13px;font-size:.9em;margin:8px 0}
 .muted{color:var(--muted);font-size:.88em}
 .hide{display:none !important}
@@ -165,6 +184,7 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
 <nav class="tabs">
   <button data-view="participar" class="active">⚽ Participar</button>
   <button data-view="tabla">📊 Tabla en vivo</button>
+  <button data-view="llave">🏆 Clasificados</button>
   <button data-view="admin">🛠️ Organizador</button>
 </nav>
 
@@ -217,6 +237,18 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
           <th class="r hcol">Bonos</th><th class="r">Total</th>
         </tr></thead><tbody></tbody></table></div>
       <p class="muted" id="tablaVacia"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LLAVE / CLASIFICADOS ============ -->
+<section id="llave" class="view">
+  <div class="wrap">
+    <div class="card">
+      <h2>🏆 Camino al título</h2>
+      <p class="sub">Así avanzan los equipos en cada fase. Se actualiza en vivo conforme el organizador carga resultados.</p>
+      <div id="campeonBanner"></div>
+      <div id="llaveCols" class="llave-cols"></div>
     </div>
   </div>
 </section>
@@ -811,9 +843,55 @@ function renderTabla(){
   // kpi
   const conRes = Object.values(cfg.resultados[fk]||{}).filter(r=>lleno(r.gh)&&lleno(r.ga)).length;
   document.getElementById("tablaKpi").innerHTML = `
-    <div class="b"><div class="v">${lb.length}</div><div class="l">participantes</div></div>
+    <div class="b"><div class="v" data-num="${lb.length}">${lb.length}</div><div class="l">participantes</div></div>
     <div class="b"><div class="v">${FASE[fk].nombre}</div><div class="l">fase en juego</div></div>
     <div class="b"><div class="v">${conRes}/${FASE[fk].partidos}</div><div class="l">marcadores cargados</div></div>`;
+  // animación de entrada (solo al abrir la pestaña, no en cada actualización)
+  if (entradaAnim){
+    const tabla = document.getElementById("tTabla");
+    tabla.classList.remove("animar"); void tabla.offsetWidth; tabla.classList.add("animar");
+    setTimeout(()=>tabla.classList.remove("animar"), 700);
+    tb.querySelectorAll(".tot").forEach(el=>countUp(el, +el.textContent));
+    const kpiN = document.querySelector("#tablaKpi [data-num]"); if(kpiN) countUp(kpiN, +kpiN.dataset.num);
+    entradaAnim=false;
+  }
+}
+
+/* ============================================================
+   VISTA: CLASIFICADOS / LLAVE
+   ============================================================ */
+function renderLlave(){
+  const cont=document.getElementById("llaveCols"); if(!cont || !cfg) return;
+  const champ = cfg.bonos?.campeon?.equipo;
+  document.getElementById("campeonBanner").innerHTML = champ ? `<div class="champ">🏆 Campeón: ${esc(champ)}</div>` : "";
+  cont.innerHTML = FASES.map(f=>{
+    const cruces = cfg.fases[f.key].cruces||[];
+    const res = cfg.resultados[f.key]||{};
+    const cards = cruces.map((cr,i)=>{
+      const id=i+1, r=res[id];
+      if(!(cr.local&&cr.visita)) return `<div class="mb pend">Cruce #${id} por definir</div>`;
+      const tieneR = r && lleno(r.gh) && lleno(r.ga);
+      const winL = r && r.avanza==='L', winV = r && r.avanza==='V';
+      return `<div class="mb">
+        <div class="row ${winL?'win':''}"><span class="t">${esc(cr.local)}</span><span class="s">${tieneR?r.gh:'·'}</span></div>
+        <div class="row ${winV?'win':''}"><span class="t">${esc(cr.visita)}</span><span class="s">${tieneR?r.ga:'·'}</span></div>
+      </div>`;
+    }).join("") || `<p class="muted">Sin cruces aún</p>`;
+    return `<div class="llave-col"><h3>${f.nombre}</h3>${cards}</div>`;
+  }).join("");
+  if (entradaAnim){
+    cont.classList.remove("animar"); void cont.offsetWidth; cont.classList.add("animar");
+    setTimeout(()=>cont.classList.remove("animar"), 800);
+    entradaAnim=false;
+  }
+}
+let entradaAnim = false;
+function prefiereReducido(){ return window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; }
+function countUp(el, to, dur=550){
+  if (prefiereReducido() || !isFinite(to)){ el.textContent = to; return; }
+  const start = performance.now();
+  function paso(t){ const p=Math.min(1,(t-start)/dur); el.textContent = Math.round(to*(1-Math.pow(1-p,3))); if(p<1) requestAnimationFrame(paso); }
+  requestAnimationFrame(paso);
 }
 
 /* ============================================================
@@ -1151,13 +1229,14 @@ document.querySelectorAll("nav.tabs button").forEach(b=>{
     document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
     b.classList.add("active");
     document.getElementById(b.dataset.view).classList.add("active");
-    if (b.dataset.view==="tabla") renderTabla();
+    if (b.dataset.view==="tabla"){ entradaAnim=true; renderTabla(); }
+    if (b.dataset.view==="llave"){ entradaAnim=true; renderLlave(); }
     if (b.dataset.view==="admin") renderAdmin();
   });
 });
 
-function renderAll(){ renderParticipar(); renderTabla(); renderAdmin(); prefillSiExiste(); renderMiResumen(); }
-function renderSinParticipar(){ renderTabla(); renderAdmin(); renderMiResumen(); }
+function renderAll(){ renderParticipar(); renderTabla(); renderAdmin(); renderLlave(); prefillSiExiste(); renderMiResumen(); }
+function renderSinParticipar(){ renderTabla(); renderAdmin(); renderLlave(); renderMiResumen(); }
 
 let _ultimaFirmaPart = "";
 Store.onConfig((c, soloTabla)=>{
