@@ -343,7 +343,15 @@ function infoDispositivo(){
   if (/Windows/.test(u)) os="Windows"; else if (/Android/.test(u)) os="Android";
   else if (/iPhone|iPad|iPod/.test(u)) os="iOS"; else if (/Mac OS X/.test(u)) os="macOS";
   else if (/Linux/.test(u)) os="Linux";
-  return { device: movil?"Móvil":"PC", browser:nav, os };
+  let tz=""; try{ tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }catch(e){}
+  return {
+    device: movil?"Móvil":"PC", browser:nav, os,
+    idioma: navigator.language || "",
+    zona: tz,
+    pantalla: (screen.width||0) + "x" + (screen.height||0),
+    plataforma: navigator.platform || "",
+    ua: u.slice(0,300),
+  };
 }
 let cfg = null;            // config viva
 let preds = {};            // { "email__fase": pred }
@@ -759,6 +767,7 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
     const d = infoDispositivo();
     Store.logEvent({ ts:pred.ts, email, nombre, fase:fk, accion: existia?"edición":"alta",
       device:d.device, browser:d.browser, os:d.os, navId:navId(),
+      idioma:d.idioma, zona:d.zona, pantalla:d.pantalla, plataforma:d.plataforma, ua:d.ua,
       tarde: faseCerrada(fk) });
     msg.textContent = "✅ ¡Guardado! Mira tu posición en la tabla.";
     const gb = document.getElementById("guardar");
