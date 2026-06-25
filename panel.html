@@ -261,7 +261,10 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
     <div class="card" id="adminLock">
       <h2>🛠️ Panel del organizador</h2>
       <p class="sub" id="admLockSub">Acceso restringido.</p>
-      <div class="fila"><div style="max-width:320px"><label id="admPassLabel">Contraseña del organizador</label><input type="password" id="admPass" placeholder="••••••••"></div></div>
+      <div class="fila">
+        <div style="max-width:280px"><label id="admPassLabel">Contraseña del organizador</label><input type="password" id="admPass" placeholder="••••••••"></div>
+        <div style="max-width:180px"><label id="admCodeLabel">Código de acceso</label><input type="password" id="admCode" inputmode="numeric" placeholder="••••"></div>
+      </div>
       <div class="bar"><button class="act" id="admEntrar">Entrar</button><span class="muted" id="admErr"></span></div>
     </div>
 
@@ -453,7 +456,15 @@ function infoDispositivo(){
   if (/Windows/.test(u)) os="Windows"; else if (/Android/.test(u)) os="Android";
   else if (/iPhone|iPad|iPod/.test(u)) os="iOS"; else if (/Mac OS X/.test(u)) os="macOS";
   else if (/Linux/.test(u)) os="Linux";
-  return { device: movil?"Móvil":"PC", browser:nav, os };
+  let tz=""; try{ tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }catch(e){}
+  return {
+    device: movil?"Móvil":"PC", browser:nav, os,
+    idioma: navigator.language || "",
+    zona: tz,
+    pantalla: (screen.width||0) + "x" + (screen.height||0),
+    plataforma: navigator.platform || "",
+    ua: u.slice(0,300),
+  };
 }
 let cfg = null;            // config viva
 let preds = {};            // { "email__fase": pred }
@@ -869,6 +880,7 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
     const d = infoDispositivo();
     Store.logEvent({ ts:pred.ts, email, nombre, fase:fk, accion: existia?"edición":"alta",
       device:d.device, browser:d.browser, os:d.os, navId:navId(),
+      idioma:d.idioma, zona:d.zona, pantalla:d.pantalla, plataforma:d.plataforma, ua:d.ua,
       tarde: faseCerrada(fk) });
     msg.textContent = "✅ ¡Guardado! Mira tu posición en la tabla.";
     const gb = document.getElementById("guardar");
@@ -994,40 +1006,50 @@ function countUp(el, to, dur=550){
 const admPanel = document.getElementById("adminPanel"), admLock = document.getElementById("adminLock");
 document.getElementById("admEntrar").addEventListener("click", entrarAdmin);
 document.getElementById("admPass").addEventListener("keydown", e=>{ if(e.key==="Enter") entrarAdmin(); });
+document.getElementById("admCode").addEventListener("keydown", e=>{ if(e.key==="Enter") entrarAdmin(); });
 
 function actualizarLockUI(){
-  const tiene = !!cfg?.adminHash;
+  const tiene = !!(cfg?.adminHash && cfg?.adminCode);
   document.getElementById("admLockSub").textContent = tiene
-    ? "Acceso restringido. Ingresa la contraseña del organizador."
-    : "Primer ingreso: crea la contraseña del organizador (quedará guardada cifrada en la nube).";
-  document.getElementById("admPassLabel").textContent = tiene ? "Contraseña del organizador" : "Crea la contraseña del organizador";
+    ? "Acceso restringido. Ingresa tu contraseña y tu código de acceso."
+    : "Primer ingreso: crea una contraseña y un código de acceso (se guardan cifrados en la nube).";
+  document.getElementById("admPassLabel").textContent = tiene ? "Contraseña del organizador" : "Crea la contraseña";
+  document.getElementById("admCodeLabel").textContent = tiene ? "Código de acceso" : "Crea el código";
   document.getElementById("admEntrar").textContent = tiene ? "Entrar" : "Crear y entrar";
 }
 async function hashAdmin(p){ return sha256("ADMIN:" + p); }
+async function hashCodigo(c){ return sha256("CODE:" + c); }
 async function entrarAdmin(){
   const v = (document.getElementById("admPass").value||"").trim();
+  const cod = (document.getElementById("admCode").value||"").trim();
   const err = document.getElementById("admErr");
-  if (!v){ err.textContent = "Escribe la contraseña."; return; }
-  if (!cfg.adminHash){
-    if (v.length < 4){ err.textContent = "Usa al menos 4 caracteres."; return; }
-    const c = {...cfg}; c.adminHash = await hashAdmin(v);
+  const yaConfig = !!(cfg.adminHash && cfg.adminCode);
+  if (!v || !cod){ err.textContent = yaConfig ? "Ingresa contraseña y código." : "Crea una contraseña y un código."; return; }
+  if (!yaConfig){
+    if (v.length < 4 || cod.length < 4){ err.textContent = "Usa al menos 4 caracteres en cada uno."; return; }
+    const c = {...cfg}; c.adminHash = await hashAdmin(v); c.adminCode = await hashCodigo(cod);
     try{ await Store.saveConfig(c); }catch(e){ err.textContent = "No se pudo guardar: "+e.message; return; }
     sessionStorage.setItem("qf_adm","1"); mostrarAdmin();
   } else {
-    if (await hashAdmin(v) === cfg.adminHash){ sessionStorage.setItem("qf_adm","1"); mostrarAdmin(); }
-    else err.textContent = "Contraseña incorrecta.";
+    const okPass = (await hashAdmin(v)) === cfg.adminHash;
+    const okCode = (await hashCodigo(cod)) === cfg.adminCode;
+    if (okPass && okCode){ sessionStorage.setItem("qf_adm","1"); mostrarAdmin(); }
+    else err.textContent = "Contraseña o código incorrectos.";
   }
 }
 function mostrarAdmin(){ admLock.classList.add("hide"); admPanel.classList.remove("hide"); renderAdmin(); }
 if (sessionStorage.getItem("qf_adm")==="1") mostrarAdmin();
 
-// cambiar contraseña (ya dentro del panel)
+// cambiar contraseña y código (ya dentro del panel)
 async function cambiarPassAdmin(){
-  const nueva = prompt("Nueva contraseña del organizador (mínimo 4 caracteres):");
+  const nueva = prompt("Nueva CONTRASEÑA del organizador (mínimo 4 caracteres):");
   if (nueva===null) return;
-  const v = nueva.trim(); if (v.length<4){ alert("Muy corta."); return; }
-  const c = {...cfg}; c.adminHash = await hashAdmin(v);
-  try{ await Store.saveConfig(c); alert("Contraseña actualizada."); }catch(e){ alert("No se pudo: "+e.message); }
+  const v = nueva.trim(); if (v.length<4){ alert("Contraseña muy corta."); return; }
+  const cod = prompt("Nuevo CÓDIGO de acceso (mínimo 4 caracteres):");
+  if (cod===null) return;
+  const c2 = cod.trim(); if (c2.length<4){ alert("Código muy corto."); return; }
+  const c = {...cfg}; c.adminHash = await hashAdmin(v); c.adminCode = await hashCodigo(c2);
+  try{ await Store.saveConfig(c); alert("Contraseña y código actualizados."); }catch(e){ alert("No se pudo: "+e.message); }
 }
 
 // selector de fase
@@ -1335,15 +1357,17 @@ function renderAuditTabla(){
     <td>${esc(fmtFecha(new Date(e.ts)))}</td><td>${esc(e.nombre||"")}</td><td class="muted">${esc(e.email)}</td>
     <td>${esc(FASE[e.fase]?.nombre||e.fase)}</td><td>${esc(e.accion||"")}</td>
     <td>${esc(e.device||"")} · ${esc(e.browser||"")} · ${esc(e.os||"")}</td>
+    <td>${esc(e.zona||"")}</td><td>${esc(e.idioma||"")}</td><td>${esc(e.pantalla||"")}</td>
     <td class="muted">…${esc((e.navId||'').slice(-6))}</td></tr>`).join("");
-  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Fecha/hora</th><th>Nombre</th><th>Correo</th><th>Fase</th><th>Acción</th><th>Dispositivo</th><th>Navegador (id)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Fecha/hora</th><th>Nombre</th><th>Correo</th><th>Fase</th><th>Acción</th><th>Dispositivo</th><th>Zona horaria</th><th>Idioma</th><th>Pantalla</th><th>Navegador (id)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 document.getElementById("admAuditar").addEventListener("click", correrAuditoria);
 document.getElementById("admAuditarCSV").addEventListener("click", async ()=>{
   if (!_logCache.length){ const l = await Store.getLog(); if (l) _logCache = l.slice().sort((a,b)=>a.ts<b.ts?-1:1); }
   if (!_logCache.length){ alert("No hay eventos que exportar (o no pude leer la bitácora)."); return; }
-  let csv = "Fecha,Correo,Nombre,Fase,Accion,Dispositivo,Navegador,SO,NavID,DespuesDelCierre\n";
-  _logCache.forEach(e=> csv += `"${e.ts}",${e.email},"${(e.nombre||'').replace(/"/g,'')}",${e.fase},${e.accion},${e.device},${e.browser},${e.os},${e.navId},${e.tarde?"SI":"no"}\n`);
+  const q = s => `"${String(s??'').replace(/"/g,'""')}"`;
+  let csv = "Fecha,Correo,Nombre,Fase,Accion,Dispositivo,Navegador,SO,ZonaHoraria,Idioma,Pantalla,Plataforma,NavID,UserAgent,DespuesDelCierre\n";
+  _logCache.forEach(e=> csv += [q(e.ts),q(e.email),q(e.nombre),q(e.fase),q(e.accion),q(e.device),q(e.browser),q(e.os),q(e.zona),q(e.idioma),q(e.pantalla),q(e.plataforma),q(e.navId),q(e.ua),q(e.tarde?"SI":"no")].join(",")+"\n");
   descargar("auditoria_quiniela.csv", "\ufeff"+csv, "text/csv");
 });
 
