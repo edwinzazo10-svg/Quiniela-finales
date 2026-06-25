@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -313,7 +313,7 @@ const BONOS_DEFAULT = {
 
 function configInicial(){
   const cfg = { faseActual:"16avos", fases:{}, puntos:JSON.parse(JSON.stringify(PUNTOS_DEFAULT)),
-                bonos:JSON.parse(JSON.stringify(BONOS_DEFAULT)), base:{}, resultados:{} };
+                bonos:JSON.parse(JSON.stringify(BONOS_DEFAULT)), base:{}, resultados:{}, soloListados:false };
   FASES.forEach(f=>{
     cfg.fases[f.key] = { cierre:"", cruces:Array.from({length:f.partidos},()=>({local:"",visita:""})) };
     cfg.resultados[f.key] = {};
@@ -325,6 +325,16 @@ function configInicial(){
    CAPA DE ALMACENAMIENTO (nube Firebase o local)
    ============================================================ */
 const LSC = "qf2026_config", LSP = "qf2026_preds", LSL = "qf2026_log";
+// IP pública (mejor esfuerzo; puede quedar vacía si la red bloquea el servicio)
+let _clientIP = "";
+(async function captarIP(){
+  try{
+    const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 2500);
+    const r = await fetch("https://api.ipify.org?format=json", { signal: ctrl.signal });
+    clearTimeout(t);
+    if (r.ok){ const j = await r.json(); _clientIP = j.ip || ""; }
+  }catch(e){ /* bloqueada o sin red: se queda vacía */ }
+})();
 // identificador estable de este navegador (para detectar mismo equipo con varios correos)
 function navId(){
   let v = localStorage.getItem("qf_navid");
@@ -732,6 +742,14 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
   const msg = document.getElementById("guardadoMsg");
   if (!nombre || !email){ msg.textContent="Escribe tu nombre y correo."; return; }
   if (faseCerrada(fk)){ msg.textContent="La fase ya cerró: no se aceptan pronósticos."; return; }
+  // --- lista blanca: solo correos cargados desde los archivos de grupos ---
+  if (cfg.soloListados){
+    const permitidos = new Set(Object.keys(cfg.base||{}).map(e=>String(e).toLowerCase()));
+    if (!permitidos.has(email)){
+      msg.textContent = "Tu correo no está en la lista de participantes habilitados. Avísale al organizador para que te agregue.";
+      return;
+    }
+  }
   // validar cruces definidos
   const cruces = cfg.fases[fk].cruces;
   const picks = {}; let faltan=0;
@@ -766,7 +784,7 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
     // bitácora de auditoría (no rompe el guardado si falla)
     const d = infoDispositivo();
     Store.logEvent({ ts:pred.ts, email, nombre, fase:fk, accion: existia?"edición":"alta",
-      device:d.device, browser:d.browser, os:d.os, navId:navId(),
+      device:d.device, browser:d.browser, os:d.os, navId:navId(), ip:_clientIP,
       idioma:d.idioma, zona:d.zona, pantalla:d.pantalla, plataforma:d.plataforma, ua:d.ua,
       tarde: faseCerrada(fk) });
     msg.textContent = "✅ ¡Guardado! Mira tu posición en la tabla.";
