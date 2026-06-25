@@ -281,6 +281,7 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
         <div class="bar">
           <button class="act" id="admAuditar">Correr auditoría</button>
           <button class="sec" id="admAuditarCSV">Exportar CSV</button>
+          <button class="sec" id="admAuditLimpiar">Limpiar alertas</button>
           <span class="muted" id="admAuditMsg"></span>
         </div>
         <div id="admAuditResumen" style="margin-top:12px"></div>
@@ -342,6 +343,11 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
           </div>
         </details>
         <div id="admBaseTabla" style="margin-top:10px"></div>
+
+        <div class="lock" style="margin-top:12px;display:flex;align-items:center;gap:10px">
+          <input type="checkbox" id="admSoloListados" style="width:18px;height:18px;flex-shrink:0">
+          <label for="admSoloListados" style="margin:0;cursor:pointer">🔒 <b>Permitir solo los correos cargados.</b> Si está activo, nadie podrá participar con un correo que no esté en los archivos de grupos. <span id="admSoloCount" class="muted"></span></label>
+        </div>
       </div>
 
       <div class="card">
@@ -426,7 +432,7 @@ const BONOS_DEFAULT = {
 
 function configInicial(){
   const cfg = { faseActual:"16avos", fases:{}, puntos:JSON.parse(JSON.stringify(PUNTOS_DEFAULT)),
-                bonos:JSON.parse(JSON.stringify(BONOS_DEFAULT)), base:{}, resultados:{} };
+                bonos:JSON.parse(JSON.stringify(BONOS_DEFAULT)), base:{}, resultados:{}, soloListados:false };
   FASES.forEach(f=>{
     cfg.fases[f.key] = { cierre:"", cruces:Array.from({length:f.partidos},()=>({local:"",visita:""})) };
     cfg.resultados[f.key] = {};
@@ -438,6 +444,16 @@ function configInicial(){
    CAPA DE ALMACENAMIENTO (nube Firebase o local)
    ============================================================ */
 const LSC = "qf2026_config", LSP = "qf2026_preds", LSL = "qf2026_log";
+// IP pública (mejor esfuerzo; puede quedar vacía si la red bloquea el servicio)
+let _clientIP = "";
+(async function captarIP(){
+  try{
+    const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 2500);
+    const r = await fetch("https://api.ipify.org?format=json", { signal: ctrl.signal });
+    clearTimeout(t);
+    if (r.ok){ const j = await r.json(); _clientIP = j.ip || ""; }
+  }catch(e){ /* bloqueada o sin red: se queda vacía */ }
+})();
 // identificador estable de este navegador (para detectar mismo equipo con varios correos)
 function navId(){
   let v = localStorage.getItem("qf_navid");
@@ -845,6 +861,14 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
   const msg = document.getElementById("guardadoMsg");
   if (!nombre || !email){ msg.textContent="Escribe tu nombre y correo."; return; }
   if (faseCerrada(fk)){ msg.textContent="La fase ya cerró: no se aceptan pronósticos."; return; }
+  // --- lista blanca: solo correos cargados desde los archivos de grupos ---
+  if (cfg.soloListados){
+    const permitidos = new Set(Object.keys(cfg.base||{}).map(e=>String(e).toLowerCase()));
+    if (!permitidos.has(email)){
+      msg.textContent = "Tu correo no está en la lista de participantes habilitados. Avísale al organizador para que te agregue.";
+      return;
+    }
+  }
   // validar cruces definidos
   const cruces = cfg.fases[fk].cruces;
   const picks = {}; let faltan=0;
@@ -879,7 +903,7 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
     // bitácora de auditoría (no rompe el guardado si falla)
     const d = infoDispositivo();
     Store.logEvent({ ts:pred.ts, email, nombre, fase:fk, accion: existia?"edición":"alta",
-      device:d.device, browser:d.browser, os:d.os, navId:navId(),
+      device:d.device, browser:d.browser, os:d.os, navId:navId(), ip:_clientIP,
       idioma:d.idioma, zona:d.zona, pantalla:d.pantalla, plataforma:d.plataforma, ua:d.ua,
       tarde: faseCerrada(fk) });
     msg.textContent = "✅ ¡Guardado! Mira tu posición en la tabla.";
@@ -1356,19 +1380,31 @@ function renderAuditTabla(){
   const rows = _logCache.slice().reverse().map(e=>`<tr>
     <td>${esc(fmtFecha(new Date(e.ts)))}</td><td>${esc(e.nombre||"")}</td><td class="muted">${esc(e.email)}</td>
     <td>${esc(FASE[e.fase]?.nombre||e.fase)}</td><td>${esc(e.accion||"")}</td>
+    <td><b>${esc(e.ip||"—")}</b></td>
     <td>${esc(e.device||"")} · ${esc(e.browser||"")} · ${esc(e.os||"")}</td>
     <td>${esc(e.zona||"")}</td><td>${esc(e.idioma||"")}</td><td>${esc(e.pantalla||"")}</td>
     <td class="muted">…${esc((e.navId||'').slice(-6))}</td></tr>`).join("");
-  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Fecha/hora</th><th>Nombre</th><th>Correo</th><th>Fase</th><th>Acción</th><th>Dispositivo</th><th>Zona horaria</th><th>Idioma</th><th>Pantalla</th><th>Navegador (id)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Fecha/hora</th><th>Nombre</th><th>Correo</th><th>Fase</th><th>Acción</th><th>IP</th><th>Dispositivo</th><th>Zona horaria</th><th>Idioma</th><th>Pantalla</th><th>Navegador (id)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 document.getElementById("admAuditar").addEventListener("click", correrAuditoria);
+document.getElementById("admAuditLimpiar").addEventListener("click", ()=>{
+  document.getElementById("admAuditResumen").innerHTML = "";
+  document.getElementById("admAuditFlags").innerHTML = "";
+  document.getElementById("admAuditTabla").innerHTML = "";
+  document.getElementById("admAuditMsg").textContent = "Alertas limpiadas en pantalla (la bitácora en la nube no se borra).";
+});
 document.getElementById("admAuditarCSV").addEventListener("click", async ()=>{
   if (!_logCache.length){ const l = await Store.getLog(); if (l) _logCache = l.slice().sort((a,b)=>a.ts<b.ts?-1:1); }
   if (!_logCache.length){ alert("No hay eventos que exportar (o no pude leer la bitácora)."); return; }
   const q = s => `"${String(s??'').replace(/"/g,'""')}"`;
-  let csv = "Fecha,Correo,Nombre,Fase,Accion,Dispositivo,Navegador,SO,ZonaHoraria,Idioma,Pantalla,Plataforma,NavID,UserAgent,DespuesDelCierre\n";
-  _logCache.forEach(e=> csv += [q(e.ts),q(e.email),q(e.nombre),q(e.fase),q(e.accion),q(e.device),q(e.browser),q(e.os),q(e.zona),q(e.idioma),q(e.pantalla),q(e.plataforma),q(e.navId),q(e.ua),q(e.tarde?"SI":"no")].join(",")+"\n");
+  let csv = "Fecha,Correo,Nombre,Fase,Accion,IP,Dispositivo,Navegador,SO,ZonaHoraria,Idioma,Pantalla,Plataforma,NavID,UserAgent,DespuesDelCierre\n";
+  _logCache.forEach(e=> csv += [q(e.ts),q(e.email),q(e.nombre),q(e.fase),q(e.accion),q(e.ip),q(e.device),q(e.browser),q(e.os),q(e.zona),q(e.idioma),q(e.pantalla),q(e.plataforma),q(e.navId),q(e.ua),q(e.tarde?"SI":"no")].join(",")+"\n");
   descargar("auditoria_quiniela.csv", "\ufeff"+csv, "text/csv");
+});
+// interruptor: permitir solo los correos cargados
+document.getElementById("admSoloListados").addEventListener("change", async (ev)=>{
+  const c = {...cfg}; c.soloListados = ev.target.checked;
+  try{ await Store.saveConfig(c); }catch(e){ alert("No se pudo guardar: "+e.message); ev.target.checked=!ev.target.checked; }
 });
 
 function toLocalInput(d){ // a YYYY-MM-DDTHH:MM en hora local del navegador
@@ -1416,6 +1452,12 @@ function renderAdminResultados(){
   cont.querySelectorAll(".score input").forEach(i=> i.classList.toggle("filled", i.value!==""));
 }
 function renderAdminBase(){
+  // estado del interruptor de lista blanca
+  const chk=document.getElementById("admSoloListados");
+  if(chk) chk.checked = !!cfg.soloListados;
+  const cnt=document.getElementById("admSoloCount");
+  if(cnt) cnt.textContent = `(${Object.keys(cfg.base||{}).length} correos en la lista)`;
+
   const cont=document.getElementById("admBaseTabla"); const base=cfg.base||{};
   const ks=Object.keys(base); if(!ks.length){ cont.innerHTML=`<p class="muted">Sin base cargada todavía.</p>`; return; }
   let rows = ks.sort((a,b)=>(base[b].pts||0)-(base[a].pts||0)).map(e=>{
