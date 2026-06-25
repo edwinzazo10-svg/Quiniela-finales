@@ -199,8 +199,10 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
       <div class="fila">
         <div><label>Nombre completo</label><input type="text" id="pNombre" autocomplete="off" placeholder="Ej. Edgar Peña"></div>
         <div><label>Correo corporativo</label><input type="email" id="pEmail" autocomplete="off" placeholder="usuario@bi.com.gt"></div>
+        <div style="max-width:180px"><label id="pinLabel">PIN (4 dígitos)</label><input type="password" id="pPin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••"></div>
       </div>
-      <p class="muted" id="pSaludo" style="margin-top:8px"></p>
+      <p class="muted" id="pinHint" style="margin-top:6px"></p>
+      <p class="muted" id="pSaludo" style="margin-top:4px"></p>
     </div>
 
     <div class="card">
@@ -258,8 +260,8 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
   <div class="wrap">
     <div class="card" id="adminLock">
       <h2>🛠️ Panel del organizador</h2>
-      <p class="sub">Acceso restringido. Aquí defines los cruces, capturas marcadores y cargas la base de la fase de grupos.</p>
-      <div class="fila"><div style="max-width:320px"><label>Contraseña del organizador</label><input type="password" id="admPass" placeholder="••••••••"></div></div>
+      <p class="sub" id="admLockSub">Acceso restringido.</p>
+      <div class="fila"><div style="max-width:320px"><label id="admPassLabel">Contraseña del organizador</label><input type="password" id="admPass" placeholder="••••••••"></div></div>
       <div class="bar"><button class="act" id="admEntrar">Entrar</button><span class="muted" id="admErr"></span></div>
     </div>
 
@@ -268,6 +270,19 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
         <h2>👥 Participantes en la tabla</h2>
         <p class="sub">Aquí está todo el que aparece en la tabla. Puedes <b>quitar</b> a quien no quieras (por ejemplo un usuario de prueba). Quitar elimina su base de grupos y todos sus pronósticos.</p>
         <div id="admParticipantes"></div>
+      </div>
+
+      <div class="card">
+        <h2>🔍 Auditoría de integridad</h2>
+        <p class="sub">Bitácora de cada vez que alguien guardó un pronóstico: fecha/hora, correo, dispositivo y un identificador del navegador. El análisis marca casos sospechosos, como un mismo equipo usado con varios correos.</p>
+        <div class="bar">
+          <button class="act" id="admAuditar">Correr auditoría</button>
+          <button class="sec" id="admAuditarCSV">Exportar CSV</button>
+          <span class="muted" id="admAuditMsg"></span>
+        </div>
+        <div id="admAuditResumen" style="margin-top:12px"></div>
+        <div id="admAuditFlags" style="margin-top:8px"></div>
+        <details class="adm" id="admAuditDetalle" style="margin-top:8px"><summary>Ver bitácora completa</summary><div id="admAuditTabla" style="margin-top:8px"></div></details>
       </div>
 
       <div class="card">
@@ -334,15 +349,16 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
       </div>
 
       <div class="card">
-        <h2><span class="n">G</span>Respaldos y exportación</h2>
+        <h2><span class="n">G</span>Seguridad, respaldos y exportación</h2>
         <div class="bar">
+          <button class="sec" id="admCambiarPass">🔑 Cambiar contraseña del organizador</button>
           <button class="sec" id="admExpCSV">Exportar tabla (CSV)</button>
           <button class="sec" id="admExpResp">Exportar respaldo completo (JSON)</button>
           <input type="file" id="admImpResp" accept=".json" class="hide">
           <button class="sec" id="admImpRespBtn">Importar respaldo</button>
           <button class="warn" id="admReset">Reiniciar todo</button>
         </div>
-        <p class="muted" style="margin-top:8px">En modo nube, el respaldo es opcional: la data ya vive compartida. En modo local, exporta el respaldo para no perder nada.</p>
+        <p class="muted" style="margin-top:8px">La contraseña se guarda cifrada en la nube, no en el código. Si la olvidas, puedes borrar el campo <i>adminHash</i> en Supabase (tabla quiniela_config) y la próxima vez podrás crear una nueva.</p>
       </div>
     </div>
   </div>
@@ -357,8 +373,8 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
    CONFIGURACIÓN — lo único que el organizador toca una vez
    ============================================================ */
 
-// 1) Contraseña del panel del organizador. CÁMBIALA.
-const ADMIN_PASS = "Edwinzazo2026$";
+// 1) La contraseña del organizador YA NO va aquí. Se define la primera vez que entras al panel
+//    y se guarda cifrada en la nube, así nadie puede verla en el código fuente.
 
 // 2) MODO EN VIVO (todos a la vez). Elige UNA opción y pega sus datos.
 //    Si dejas las dos vacías, funciona en MODO LOCAL (solo este navegador) para probar.
@@ -366,7 +382,8 @@ const ADMIN_PASS = "Edwinzazo2026$";
 //  OPCIÓN A — Supabase (recomendada si tu empresa bloquea Google/Firebase).
 //  Pega la URL del proyecto y la clave pública "anon". Guía en el mensaje del chat.
 const SUPABASE_CONFIG = {
-  url: "https://dcclvwxliomajobdhjra.supabase.co",        // ej. "https://abcd1234.supabase.co"
+  url: "https://dcclvwxliomajobdhjra.supabase.co
+",        // ej. "https://abcd1234.supabase.co"
   anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjY2x2d3hsaW9tYWpvYmRoanJhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNDcwOTksImV4cCI6MjA5NzcyMzA5OX0.i8HcZDgih9RM3VMYrPbwWmoGqb4nSU_o_SMT0DiUBHk",    // la clave pública "anon"
 };
 
@@ -418,7 +435,27 @@ function configInicial(){
 /* ============================================================
    CAPA DE ALMACENAMIENTO (nube Firebase o local)
    ============================================================ */
-const LSC = "qf2026_config", LSP = "qf2026_preds";
+const LSC = "qf2026_config", LSP = "qf2026_preds", LSL = "qf2026_log";
+// identificador estable de este navegador (para detectar mismo equipo con varios correos)
+function navId(){
+  let v = localStorage.getItem("qf_navid");
+  if (!v){ v = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("qf_navid", v); }
+  return v;
+}
+// lectura aproximada del dispositivo/navegador desde el user-agent
+function infoDispositivo(){
+  const u = navigator.userAgent || "";
+  const movil = /Mobile|Android|iPhone|iPad|iPod/i.test(u);
+  let nav = "Otro";
+  if (/Edg\//.test(u)) nav="Edge"; else if (/OPR\//.test(u)) nav="Opera";
+  else if (/Chrome\//.test(u)) nav="Chrome"; else if (/Firefox\//.test(u)) nav="Firefox";
+  else if (/Safari\//.test(u)) nav="Safari";
+  let os = "Otro";
+  if (/Windows/.test(u)) os="Windows"; else if (/Android/.test(u)) os="Android";
+  else if (/iPhone|iPad|iPod/.test(u)) os="iOS"; else if (/Mac OS X/.test(u)) os="macOS";
+  else if (/Linux/.test(u)) os="Linux";
+  return { device: movil?"Móvil":"PC", browser:nav, os };
+}
 let cfg = null;            // config viva
 let preds = {};            // { "email__fase": pred }
 const Store = {
@@ -525,6 +562,23 @@ const Store = {
     else if (this.mode==="firebase"){ await this.fs.setDoc(this.fs.doc(this.db,"quiniela2026","config"), c); }
     else { localStorage.setItem(LSC, JSON.stringify(c)); }
   },
+  // --- bitácora de auditoría (append-only) ---
+  async logEvent(entry){
+    const id = entry.ts + "_" + Math.random().toString(36).slice(2,8);
+    const row = { id, data: entry };
+    try{
+      if (this.mode==="supabase"){ await this.sb.from("quiniela_log").insert(row); }
+      else if (this.mode==="firebase"){ await this.fs.setDoc(this.fs.doc(this.db,"quiniela2026_log",id), entry); }
+      else { const l = JSON.parse(localStorage.getItem(LSL)||"[]"); l.push(entry); localStorage.setItem(LSL, JSON.stringify(l)); }
+    }catch(e){ console.warn("log (no crítico):", e); }   // si falla el log, no se rompe el guardado
+  },
+  async getLog(){
+    try{
+      if (this.mode==="supabase"){ const {data,error}=await this.sb.from("quiniela_log").select("data"); if(error) throw error; return (data||[]).map(r=>r.data); }
+      else if (this.mode==="firebase"){ const snap=await this.fs.getDocs(this.fs.collection(this.db,"quiniela2026_log")); const out=[]; snap.forEach(d=>out.push(d.data())); return out; }
+      else { return JSON.parse(localStorage.getItem(LSL)||"[]"); }
+    }catch(e){ console.error("No pude leer la bitácora:", e); return null; }
+  },
 };
 // aviso visible cuando la nube falla (no dejar al usuario a ciegas)
 function nubeProblema(txt){
@@ -583,7 +637,7 @@ function leaderboard(){
                     campeonPick:cfg.base[email].campeonPick||"", fases:{}, bonos:0, total:0 };
   }
   for (const id in preds){
-    const pr = preds[id]; if (!pr || !pr.email) continue;
+    const pr = preds[id]; if (!pr || !pr.email || pr.tipo==="pin") continue;
     const email = pr.email;
     if (!part[email]) part[email] = { email, nombre:pr.nombre||email, base:0, campeonPick:"", fases:{}, bonos:0, total:0 };
     if (pr.nombre) part[email].nombre = pr.nombre;
@@ -675,6 +729,10 @@ let pickState = {};  // {id:{gh,ga,avanza}} edición en curso
 
 function emailActual(){ return elEmail.value.trim().toLowerCase(); }
 function idPred(email, fase){ return email + "__" + fase; }
+// --- PIN por participante (guardado cifrado, fila aparte en preds) ---
+function pinId(email){ return "PIN__" + email; }
+function getPinHash(email){ return preds[pinId(email)]?.pinHash || null; }
+async function hashPin(email, pin){ return sha256("PIN:" + email + ":" + pin); }
 
 function renderParticipar(){
   if (!cfg) return;
@@ -745,7 +803,20 @@ document.getElementById("cruces").addEventListener("click", ev=>{
   b.classList.add("sel");
 });
 
+function actualizarPinUI(){
+  const email = emailActual();
+  const lbl = document.getElementById("pinLabel"), hint = document.getElementById("pinHint");
+  if (!email){ lbl.textContent="PIN (4 dígitos)"; hint.textContent=""; return; }
+  if (getPinHash(email)){
+    lbl.textContent = "Tu PIN (4 dígitos)";
+    hint.textContent = "🔒 Este correo ya tiene PIN. Ingrésalo para guardar o editar tu pronóstico.";
+  } else {
+    lbl.textContent = "Crea tu PIN (4 dígitos)";
+    hint.textContent = "🆕 Aún no tienes PIN. El que escribas aquí quedará como tu clave para futuras ediciones.";
+  }
+}
 function prefillSiExiste(){
+  actualizarPinUI();
   const email = emailActual(), fk = cfg?.faseActual; if (!email || !fk) return;
   const pr = preds[idPred(email,fk)];
   const sal = document.getElementById("pSaludo");
@@ -774,13 +845,37 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
     picks[id] = { gh: ps.gh===""?"":+ps.gh, ga: ps.ga===""?"":+ps.ga, avanza: ps.avanza||"" };
   });
   if (faltan){ msg.textContent = `Te faltan ${faltan} cruce(s): marcador y quién avanza.`; return; }
+
+  // --- control de PIN: verificar el existente o crear el primero ---
+  const pinIn = (document.getElementById("pPin").value || "").trim();
+  const pinHash = getPinHash(email);
+  if (!/^\d{4}$/.test(pinIn)){
+    msg.textContent = pinHash ? "Ingresa tu PIN de 4 dígitos para guardar." : "Crea un PIN de 4 dígitos (lo usarás para editar tu pronóstico).";
+    return;
+  }
+  const hIn = await hashPin(email, pinIn);
+  let pinNuevo = false;
+  if (pinHash){
+    if (hIn !== pinHash){ msg.textContent = "PIN incorrecto. Si lo olvidaste, pídele al organizador que lo resetee."; return; }
+  } else {
+    pinNuevo = true;   // se guardará el PIN nuevo más abajo
+  }
+
+  const existia = !!preds[idPred(email,fk)];           // ¿ya había pronóstico? -> alta vs edición
   const pred = { email, nombre, fase:fk, picks, ts:new Date().toISOString() };
   try{
+    if (pinNuevo) await Store.savePred(pinId(email), { tipo:"pin", email, pinHash:hIn, ts:pred.ts });
     await Store.savePred(idPred(email,fk), pred);
+    // bitácora de auditoría (no rompe el guardado si falla)
+    const d = infoDispositivo();
+    Store.logEvent({ ts:pred.ts, email, nombre, fase:fk, accion: existia?"edición":"alta",
+      device:d.device, browser:d.browser, os:d.os, navId:navId(),
+      tarde: faseCerrada(fk) });
     msg.textContent = "✅ ¡Guardado! Mira tu posición en la tabla.";
     const gb = document.getElementById("guardar");
     gb.classList.add("saved"); setTimeout(()=>gb.classList.remove("saved"), 600);
     document.getElementById("pSaludo").textContent = "Pronóstico guardado — puedes editarlo hasta el cierre.";
+    actualizarPinUI();
     renderMiResumen();
   }catch(e){ msg.textContent = "Error al guardar: "+e.message; }
 });
@@ -900,13 +995,41 @@ function countUp(el, to, dur=550){
 const admPanel = document.getElementById("adminPanel"), admLock = document.getElementById("adminLock");
 document.getElementById("admEntrar").addEventListener("click", entrarAdmin);
 document.getElementById("admPass").addEventListener("keydown", e=>{ if(e.key==="Enter") entrarAdmin(); });
-function entrarAdmin(){
-  const v = document.getElementById("admPass").value;
-  if (v===ADMIN_PASS){ sessionStorage.setItem("qf_adm","1"); mostrarAdmin(); }
-  else document.getElementById("admErr").textContent = "Contraseña incorrecta.";
+
+function actualizarLockUI(){
+  const tiene = !!cfg?.adminHash;
+  document.getElementById("admLockSub").textContent = tiene
+    ? "Acceso restringido. Ingresa la contraseña del organizador."
+    : "Primer ingreso: crea la contraseña del organizador (quedará guardada cifrada en la nube).";
+  document.getElementById("admPassLabel").textContent = tiene ? "Contraseña del organizador" : "Crea la contraseña del organizador";
+  document.getElementById("admEntrar").textContent = tiene ? "Entrar" : "Crear y entrar";
+}
+async function hashAdmin(p){ return sha256("ADMIN:" + p); }
+async function entrarAdmin(){
+  const v = (document.getElementById("admPass").value||"").trim();
+  const err = document.getElementById("admErr");
+  if (!v){ err.textContent = "Escribe la contraseña."; return; }
+  if (!cfg.adminHash){
+    if (v.length < 4){ err.textContent = "Usa al menos 4 caracteres."; return; }
+    const c = {...cfg}; c.adminHash = await hashAdmin(v);
+    try{ await Store.saveConfig(c); }catch(e){ err.textContent = "No se pudo guardar: "+e.message; return; }
+    sessionStorage.setItem("qf_adm","1"); mostrarAdmin();
+  } else {
+    if (await hashAdmin(v) === cfg.adminHash){ sessionStorage.setItem("qf_adm","1"); mostrarAdmin(); }
+    else err.textContent = "Contraseña incorrecta.";
+  }
 }
 function mostrarAdmin(){ admLock.classList.add("hide"); admPanel.classList.remove("hide"); renderAdmin(); }
 if (sessionStorage.getItem("qf_adm")==="1") mostrarAdmin();
+
+// cambiar contraseña (ya dentro del panel)
+async function cambiarPassAdmin(){
+  const nueva = prompt("Nueva contraseña del organizador (mínimo 4 caracteres):");
+  if (nueva===null) return;
+  const v = nueva.trim(); if (v.length<4){ alert("Muy corta."); return; }
+  const c = {...cfg}; c.adminHash = await hashAdmin(v);
+  try{ await Store.saveConfig(c); alert("Contraseña actualizada."); }catch(e){ alert("No se pudo: "+e.message); }
+}
 
 // selector de fase
 const admFaseSel = document.getElementById("admFaseSel");
@@ -1099,9 +1222,11 @@ document.getElementById("admImpResp").addEventListener("change", async ev=>{
   }catch(e){ alert("Respaldo inválido: "+e.message); }
   ev.target.value="";
 });
+document.getElementById("admCambiarPass").addEventListener("click", cambiarPassAdmin);
 document.getElementById("admReset").addEventListener("click", async ()=>{
   if (!confirm("Esto borra cruces, marcadores, bonos y base (no las predicciones de la nube). ¿Continuar?")) return;
-  await Store.saveConfig(configInicial()); renderAll();
+  const fresca = configInicial(); fresca.adminHash = cfg.adminHash;   // conserva la contraseña
+  await Store.saveConfig(fresca); renderAll();
 });
 
 function descargar(nombre, contenido, tipo){
@@ -1135,25 +1260,94 @@ function renderAdminParticipantes(){
   const cont = document.getElementById("admParticipantes"); if(!cont) return;
   const lb = leaderboard();
   if (!lb.length){ cont.innerHTML = `<p class="muted">Aún no hay nadie en la tabla. Carga la fase de grupos o espera a que llenen sus pronósticos.</p>`; return; }
-  const rows = lb.map(p=>`<tr>
+  const rows = lb.map(p=>{
+    const tienePin = !!getPinHash(p.email);
+    return `<tr>
       <td><b>${esc(p.nombre)}</b></td>
       <td class="muted">${esc(p.email)}</td>
+      <td class="c">${tienePin?'🔒':'—'}</td>
       <td class="r">${p.total}</td>
-      <td class="c"><button class="warn" data-del="${esc(p.email)}">Quitar</button></td>
-    </tr>`).join("");
-  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Nombre</th><th>Correo</th><th class="r">Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      <td class="c">
+        ${tienePin?`<button class="sec" data-pin="${esc(p.email)}" style="padding:6px 12px;font-size:.85em">Resetear PIN</button>`:''}
+        <button class="warn" data-del="${esc(p.email)}">Quitar</button>
+      </td>
+    </tr>`;
+  }).join("");
+  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Nombre</th><th>Correo</th><th class="c">PIN</th><th class="r">Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 async function borrarParticipante(email){
   if (!email) return;
-  if (!confirm(`¿Quitar a "${email}" de la tabla?\nSe eliminan su base de grupos y todos sus pronósticos.`)) return;
+  if (!confirm(`¿Quitar a "${email}" de la tabla?\nSe eliminan su base de grupos, su PIN y todos sus pronósticos.`)) return;
   for (const f of FASES){ const id = email+"__"+f.key; if (preds[id]) await Store.delPred(id); }
+  if (preds[pinId(email)]) await Store.delPred(pinId(email));
   if (cfg.base && cfg.base[email]){ const c={...cfg}; delete c.base[email]; await Store.saveConfig(c); }
   renderAdminParticipantes(); renderAdminBase(); renderTabla(); renderMiResumen();
 }
+async function resetearPin(email){
+  if (!email) return;
+  if (!confirm(`¿Resetear el PIN de "${email}"?\nLa próxima vez que guarde su pronóstico podrá crear uno nuevo.`)) return;
+  if (preds[pinId(email)]) await Store.delPred(pinId(email));
+  renderAdminParticipantes();
+}
 document.getElementById("admParticipantes").addEventListener("click", ev=>{
-  const b = ev.target.closest("button[data-del]"); if(!b) return;
-  borrarParticipante(b.dataset.del);
+  const del = ev.target.closest("button[data-del]");
+  const pin = ev.target.closest("button[data-pin]");
+  if (del) borrarParticipante(del.dataset.del);
+  else if (pin) resetearPin(pin.dataset.pin);
 });
+
+/* ---------- Auditoría ---------- */
+let _logCache = [];
+async function correrAuditoria(){
+  const msg = document.getElementById("admAuditMsg"); msg.textContent = "Leyendo bitácora…";
+  const log = await Store.getLog();
+  if (log === null){ msg.textContent = "No pude leer la bitácora. ¿Creaste la tabla quiniela_log con su SQL?"; return; }
+  _logCache = log.slice().sort((a,b)=> a.ts<b.ts?-1:1);
+  msg.textContent = `${log.length} evento(s) analizados.`;
+  const porNav = {}, porEmail = {};
+  _logCache.forEach(e=>{
+    (porNav[e.navId] ??= new Set()).add(e.email);
+    (porEmail[e.email] ??= new Set()).add(e.navId);
+  });
+  const flags = [];
+  for (const nav in porNav){ if (porNav[nav].size>1) flags.push({sev:"alta", txt:`Un mismo navegador (…${(nav||'').slice(-6)}) guardó pronósticos de ${porNav[nav].size} correos: ${[...porNav[nav]].join(", ")}`}); }
+  for (const em in porEmail){ if (porEmail[em].size>2) flags.push({sev:"media", txt:`El correo ${em} se usó desde ${porEmail[em].size} navegadores distintos.`}); }
+  for (let i=1;i<_logCache.length;i++){ const a=_logCache[i-1], b=_logCache[i];
+    if (a.navId===b.navId && a.email!==b.email){ const dt=(new Date(b.ts)-new Date(a.ts))/60000;
+      if (dt<10) flags.push({sev:"alta", txt:`Mismo navegador llenó ${a.email} y ${b.email} con ${dt.toFixed(1)} min de diferencia.`}); } }
+  _logCache.filter(e=>e.tarde).forEach(e=> flags.push({sev:"alta", txt:`Guardado posterior al cierre: ${e.email} (${FASE[e.fase]?.nombre||e.fase}).`}));
+
+  const navs = Object.keys(porNav).length, emails = Object.keys(porEmail).length;
+  document.getElementById("admAuditResumen").innerHTML = `<div class="kpi">
+    <div class="b"><div class="v">${log.length}</div><div class="l">eventos</div></div>
+    <div class="b"><div class="v">${emails}</div><div class="l">correos activos</div></div>
+    <div class="b"><div class="v">${navs}</div><div class="l">navegadores</div></div>
+    <div class="b"><div class="v">${flags.length}</div><div class="l">alertas</div></div></div>`;
+  const fc = document.getElementById("admAuditFlags");
+  fc.innerHTML = flags.length
+    ? flags.map(f=>`<div class="lock" ${f.sev==='alta'?'style="background:#fdeceb;border-color:#f3c4be;color:#a3271d"':''}>${f.sev==='alta'?'🚩':'⚠'} ${esc(f.txt)}</div>`).join("")
+    : `<div class="banner open">✅ Sin anomalías detectadas en la bitácora.</div>`;
+  renderAuditTabla();
+}
+function renderAuditTabla(){
+  const cont = document.getElementById("admAuditTabla");
+  if (!_logCache.length){ cont.innerHTML = `<p class="muted">Sin eventos registrados aún.</p>`; return; }
+  const rows = _logCache.slice().reverse().map(e=>`<tr>
+    <td>${esc(fmtFecha(new Date(e.ts)))}</td><td>${esc(e.nombre||"")}</td><td class="muted">${esc(e.email)}</td>
+    <td>${esc(FASE[e.fase]?.nombre||e.fase)}</td><td>${esc(e.accion||"")}</td>
+    <td>${esc(e.device||"")} · ${esc(e.browser||"")} · ${esc(e.os||"")}</td>
+    <td class="muted">…${esc((e.navId||'').slice(-6))}</td></tr>`).join("");
+  cont.innerHTML = `<div style="overflow-x:auto"><table><thead><tr><th>Fecha/hora</th><th>Nombre</th><th>Correo</th><th>Fase</th><th>Acción</th><th>Dispositivo</th><th>Navegador (id)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+document.getElementById("admAuditar").addEventListener("click", correrAuditoria);
+document.getElementById("admAuditarCSV").addEventListener("click", async ()=>{
+  if (!_logCache.length){ const l = await Store.getLog(); if (l) _logCache = l.slice().sort((a,b)=>a.ts<b.ts?-1:1); }
+  if (!_logCache.length){ alert("No hay eventos que exportar (o no pude leer la bitácora)."); return; }
+  let csv = "Fecha,Correo,Nombre,Fase,Accion,Dispositivo,Navegador,SO,NavID,DespuesDelCierre\n";
+  _logCache.forEach(e=> csv += `"${e.ts}",${e.email},"${(e.nombre||'').replace(/"/g,'')}",${e.fase},${e.accion},${e.device},${e.browser},${e.os},${e.navId},${e.tarde?"SI":"no"}\n`);
+  descargar("auditoria_quiniela.csv", "\ufeff"+csv, "text/csv");
+});
+
 function toLocalInput(d){ // a YYYY-MM-DDTHH:MM en hora local del navegador
   const p=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -1235,8 +1429,8 @@ document.querySelectorAll("nav.tabs button").forEach(b=>{
   });
 });
 
-function renderAll(){ renderParticipar(); renderTabla(); renderAdmin(); renderLlave(); prefillSiExiste(); renderMiResumen(); }
-function renderSinParticipar(){ renderTabla(); renderAdmin(); renderLlave(); renderMiResumen(); }
+function renderAll(){ actualizarLockUI(); renderParticipar(); renderTabla(); renderAdmin(); renderLlave(); prefillSiExiste(); renderMiResumen(); }
+function renderSinParticipar(){ actualizarLockUI(); renderTabla(); renderAdmin(); renderLlave(); renderMiResumen(); }
 
 let _ultimaFirmaPart = "";
 Store.onConfig((c, soloTabla)=>{
