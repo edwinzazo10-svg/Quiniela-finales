@@ -291,17 +291,17 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
 
       <div class="card">
         <h2><span class="n">A</span>Fase abierta para pronósticos</h2>
-        <p class="sub">Define qué fase pueden llenar los participantes ahora y hasta cuándo.</p>
+        <p class="sub">Define qué fase pueden llenar los participantes ahora. El cierre de aquí es solo un <b>respaldo</b>: si un partido no tiene su propia fecha, se usa esta. Lo que manda es la <b>hora de cada partido</b> (sección B).</p>
         <div class="fila">
           <div><label>Fase actual</label><select id="admFaseSel"></select></div>
-          <div><label>Cierre de pronósticos (hora Guatemala)</label><input type="datetime-local" id="admCierre"></div>
+          <div><label>Cierre de respaldo (opcional)</label><input type="datetime-local" id="admCierre"></div>
         </div>
         <div class="bar"><button class="sec" id="admGuardarFase">Guardar fase y cierre</button></div>
       </div>
 
       <div class="card">
-        <h2><span class="n">B</span>Cruces de <span id="admFaseNom"></span></h2>
-        <p class="sub">Una vez terminados los grupos, escribe los equipos de cada llave. Los participantes solo ven los cruces que ya tengan ambos equipos.</p>
+        <h2><span class="n">B</span>Cruces y horarios de <span id="admFaseNom"></span></h2>
+        <p class="sub">Escribe los equipos de cada llave y <b>la fecha/hora de cierre de ese partido</b>. Cada partido se bloquea solo al llegar su hora; los demás siguen abiertos. Así puedes ir llenando de a un partido a la vez. Los participantes solo ven los cruces que ya tengan ambos equipos.</p>
         <div id="admCruces"></div>
         <div class="bar"><button class="sec" id="admGuardarCruces">Guardar cruces</button></div>
       </div>
@@ -434,7 +434,7 @@ function configInicial(){
   const cfg = { faseActual:"16avos", fases:{}, puntos:JSON.parse(JSON.stringify(PUNTOS_DEFAULT)),
                 bonos:JSON.parse(JSON.stringify(BONOS_DEFAULT)), base:{}, resultados:{}, soloListados:false };
   FASES.forEach(f=>{
-    cfg.fases[f.key] = { cierre:"", cruces:Array.from({length:f.partidos},()=>({local:"",visita:""})) };
+    cfg.fases[f.key] = { cierre:"", cruces:Array.from({length:f.partidos},()=>({local:"",visita:"",cierre:""})) };
     cfg.resultados[f.key] = {};
   });
   return cfg;
@@ -739,6 +739,13 @@ function esc(s){ return String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 function ahoraGT(){ return new Date(); }
 function cierreFase(k){ const c=cfg?.fases?.[k]?.cierre; return c?new Date(c):null; }
 function faseCerrada(k){ const c=cierreFase(k); return c? ahoraGT()>c : false; }
+// cierre por partido: usa el del cruce y, si no tiene, cae al de la fase
+function cierreCruce(k, idx){
+  const cr = cfg?.fases?.[k]?.cruces?.[idx];
+  const c = (cr && cr.cierre) ? cr.cierre : (cfg?.fases?.[k]?.cierre || "");
+  return c ? new Date(c) : null;
+}
+function cruceCerrado(k, idx){ const c=cierreCruce(k,idx); return c ? ahoraGT()>c : false; }
 function fmtFecha(d){ return d? d.toLocaleString('es-GT',{dateStyle:'medium',timeStyle:'short'}) : "—"; }
 function optionsEquipos(sel, incVacio=true){
   sel.innerHTML = incVacio ? '<option value="">— elegir —</option>' : '';
@@ -764,16 +771,31 @@ function renderParticipar(){
   if (!cfg) return;
   const fk = cfg.faseActual, f = FASE[fk];
   document.getElementById("faseTitulo").textContent = "Pronostica: " + f.nombre;
-  // banner cierre
+
+  const cruces = cfg.fases[fk].cruces || [];
+  // contar partidos publicados / abiertos / cerrados
+  let publicados=0, abiertos=0, cerrados=0, proxima=null;
+  cruces.forEach((cr,i)=>{
+    if (!(cr.local && cr.visita)) return;
+    publicados++;
+    if (cruceCerrado(fk,i)) cerrados++;
+    else { abiertos++; const c=cierreCruce(fk,i); if (c && (!proxima || c<proxima)) proxima=c; }
+  });
+
+  // banner según estado por partido
   const banner = document.getElementById("faseBanner");
-  const cerr = faseCerrada(fk), c = cierreFase(fk);
-  if (cerr){ banner.className="banner closed"; banner.innerHTML = `⛔ <span>Los pronósticos de <b>${f.nombre}</b> están <b>cerrados</b>. Ya no se aceptan cambios.</span>`; }
-  else if (c){ banner.className="banner open"; banner.innerHTML = `🟢 <span><b>${f.nombre}</b> abierta. Cierre: <b>${fmtFecha(c)}</b> (hora Guatemala).</span>`; }
-  else { banner.className="banner warn"; banner.innerHTML = `⚠️ <span>El organizador aún no fija la hora de cierre de <b>${f.nombre}</b>.</span>`; }
+  if (!publicados){
+    banner.className="banner warn"; banner.innerHTML = `⚠️ <span>El organizador todavía no publica los cruces de <b>${f.nombre}</b>.</span>`;
+  } else if (abiertos===0){
+    banner.className="banner closed"; banner.innerHTML = `⛔ <span>Todos los partidos de <b>${f.nombre}</b> ya cerraron. No se aceptan cambios.</span>`;
+  } else {
+    banner.className="banner open";
+    banner.innerHTML = `🟢 <span><b>${abiertos}</b> partido(s) abierto(s)${cerrados?` · 🔒 ${cerrados} cerrado(s)`:""}. ` +
+      (proxima?`Próximo cierre: <b>${fmtFecha(proxima)}</b> (hora Guatemala).`:"Cada partido cierra en su propia hora.") + `</span>`;
+  }
 
   // cruces
   const cont = document.getElementById("cruces"); cont.innerHTML = "";
-  const cruces = cfg.fases[fk].cruces || [];
   let algun = false;
   cruces.forEach((cr,i)=>{
     const id = i+1;
@@ -788,18 +810,23 @@ function renderParticipar(){
     }
     algun = true;
     const ps = pickState[id]||{};
+    const cerrado = cruceCerrado(fk,i);
+    const cc = cierreCruce(fk,i);
+    const estado = cerrado
+      ? `<div class="advlbl" style="color:#a3271d">🔒 Cerrado${cc?` el ${fmtFecha(cc)}`:""} — ya no se puede cambiar.</div>`
+      : (cc?`<div class="advlbl" style="color:#0a6b39">🟢 Cierra: ${fmtFecha(cc)}</div>`:`<div class="advlbl">Sin hora de cierre asignada.</div>`);
     row.innerHTML = `<span class="num">#${id}</span>
       <span class="team l">${esc(cr.local)}</span>
       <span class="score">
-        <input type="number" min="0" max="30" inputmode="numeric" data-id="${id}" data-s="gh" value="${ps.gh??""}">
+        <input type="number" min="0" max="30" inputmode="numeric" data-id="${id}" data-s="gh" value="${ps.gh??""}" ${cerrado?"disabled":""}>
         <span class="dash">–</span>
-        <input type="number" min="0" max="30" inputmode="numeric" data-id="${id}" data-s="ga" value="${ps.ga??""}">
+        <input type="number" min="0" max="30" inputmode="numeric" data-id="${id}" data-s="ga" value="${ps.ga??""}" ${cerrado?"disabled":""}>
       </span>
       <span class="team">${esc(cr.visita)}</span>
-      <div class="advlbl">¿Quién avanza? (prórroga / penales)</div>
+      ${estado}
       <div class="advbtns">
-        <button data-id="${id}" data-av="L" class="${ps.avanza==='L'?'sel':''}">${esc(cr.local)} <span class="ar">▸ avanza</span></button>
-        <button data-id="${id}" data-av="V" class="${ps.avanza==='V'?'sel':''}">${esc(cr.visita)} <span class="ar">▸ avanza</span></button>
+        <button data-id="${id}" data-av="L" class="${ps.avanza==='L'?'sel':''}" ${cerrado?"disabled":""}>${esc(cr.local)} <span class="ar">▸ avanza</span></button>
+        <button data-id="${id}" data-av="V" class="${ps.avanza==='V'?'sel':''}" ${cerrado?"disabled":""}>${esc(cr.visita)} <span class="ar">▸ avanza</span></button>
       </div>`;
     cont.appendChild(row);
   });
@@ -807,9 +834,8 @@ function renderParticipar(){
     cont.innerHTML = `<p class="muted">El organizador todavía no publica los cruces de ${f.nombre}. Vuelve cuando estén listos.</p>`;
   }
 
-  const bloqueado = cerr;
-  cont.querySelectorAll("input,button").forEach(el=> el.disabled = bloqueado);
-  document.getElementById("guardar").disabled = bloqueado;
+  // el botón guardar se habilita si hay al menos un partido abierto
+  document.getElementById("guardar").disabled = (abiertos===0);
 
   markFilled();
 }
@@ -860,7 +886,6 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
   const nombre = elNombre.value.trim(), email = emailActual(), fk = cfg.faseActual, f = FASE[fk];
   const msg = document.getElementById("guardadoMsg");
   if (!nombre || !email){ msg.textContent="Escribe tu nombre y correo."; return; }
-  if (faseCerrada(fk)){ msg.textContent="La fase ya cerró: no se aceptan pronósticos."; return; }
   // --- lista blanca: solo correos cargados desde los archivos de grupos ---
   if (cfg.soloListados){
     const permitidos = new Set(Object.keys(cfg.base||{}).map(e=>String(e).toLowerCase()));
@@ -869,16 +894,25 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
       return;
     }
   }
-  // validar cruces definidos
+  // cruces: los partidos CERRADOS conservan lo ya guardado; los ABIERTOS toman lo de pantalla
   const cruces = cfg.fases[fk].cruces;
-  const picks = {}; let faltan=0;
+  const previos = (preds[idPred(email,fk)]?.picks) || {};
+  const picks = {}; let faltan=0, hayAbiertoEditable=false;
   cruces.forEach((cr,i)=>{
     if (!(cr.local && cr.visita)) return;
-    const id=i+1, ps=pickState[id]||{};
+    const id=i+1;
+    if (cruceCerrado(fk,i)){
+      // partido cerrado: se mantiene exactamente lo que ya tenía (no se puede cambiar)
+      if (previos[id]) picks[id] = previos[id];
+      return;
+    }
+    hayAbiertoEditable = true;
+    const ps = pickState[id]||{};
     if (ps.gh==="" || ps.gh==null || ps.ga==="" || ps.ga==null || !ps.avanza){ faltan++; }
     picks[id] = { gh: ps.gh===""?"":+ps.gh, ga: ps.ga===""?"":+ps.ga, avanza: ps.avanza||"" };
   });
-  if (faltan){ msg.textContent = `Te faltan ${faltan} cruce(s): marcador y quién avanza.`; return; }
+  if (!hayAbiertoEditable){ msg.textContent="Todos los partidos de esta fase ya cerraron: no hay nada que se pueda cambiar."; return; }
+  if (faltan){ msg.textContent = `Te faltan ${faltan} partido(s) abierto(s): marcador y quién avanza.`; return; }
 
   // --- control de PIN: verificar el existente o crear el primero ---
   const pinIn = (document.getElementById("pPin").value || "").trim();
@@ -1095,11 +1129,18 @@ document.getElementById("admGuardarFase").addEventListener("click", async ()=>{
 document.getElementById("admGuardarCruces").addEventListener("click", async ()=>{
   const c = {...cfg}; const fk = admFaseVista;
   const rows = document.querySelectorAll("#admCruces .tie");
-  c.fases[fk].cruces = Array.from(rows).map(r=>({
-    local: r.querySelector("[data-x=local]").value,
-    visita: r.querySelector("[data-x=visita]").value,
-  }));
-  await Store.saveConfig(c); flash("admGuardarCruces","Cruces guardados");
+  const previas = cfg.fases[fk].cruces || [];
+  c.fases[fk].cruces = Array.from(rows).map((r,i)=>{
+    // un partido ya cerrado no se altera (conserva equipos y hora)
+    if (cruceCerrado(fk,i) && previas[i]) return previas[i];
+    const cierreV = r.querySelector("[data-x=cierre]").value;
+    return {
+      local: r.querySelector("[data-x=local]").value,
+      visita: r.querySelector("[data-x=visita]").value,
+      cierre: cierreV ? new Date(cierreV).toISOString() : "",
+    };
+  });
+  await Store.saveConfig(c); flash("admGuardarCruces","Cruces y horarios guardados");
 });
 document.getElementById("admGuardarBonos").addEventListener("click", async ()=>{
   const c = {...cfg};
@@ -1415,11 +1456,16 @@ function renderAdminCruces(){
   const fk=admFaseVista, cont=document.getElementById("admCruces"); cont.innerHTML="";
   const cruces = cfg.fases[fk].cruces;
   cruces.forEach((cr,i)=>{
+    const cerrado = cruceCerrado(fk,i);
     const row=document.createElement("div"); row.className="tie";
     row.innerHTML = `<span class="num">#${i+1}</span>
-      <span class="team l"><select data-x="local"></select></span>
+      <span class="team l"><select data-x="local" ${cerrado?"disabled":""}></select></span>
       <span class="score"><span class="dash">vs</span></span>
-      <span class="team"><select data-x="visita"></select></span>`;
+      <span class="team"><select data-x="visita" ${cerrado?"disabled":""}></select></span>
+      <div class="advlbl" style="${cerrado?'color:#a3271d':'color:#0a6b39'}">${cerrado?'🔒 Cerrado — los participantes ya no pueden cambiarlo':'🕓 Cierre de este partido (hora Guatemala)'}</div>
+      <div class="advbtns" style="justify-content:flex-start">
+        <input type="datetime-local" data-x="cierre" value="${cr.cierre?toLocalInput(new Date(cr.cierre)):''}" style="max-width:230px">
+      </div>`;
     const sl=row.querySelector('[data-x=local]'), sv=row.querySelector('[data-x=visita]');
     optionsEquipos(sl); optionsEquipos(sv); sl.value=cr.local||""; sv.value=cr.visita||"";
     cont.appendChild(row);
