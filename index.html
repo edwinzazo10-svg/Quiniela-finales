@@ -206,7 +206,7 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
 
     <div class="card">
       <h2><span class="n">2</span><span id="faseTitulo">Pronostica la fase</span></h2>
-      <p class="sub">Por cada cruce: marcador del <b>tiempo reglamentario (90′)</b> y <b>quién avanza</b> (cuenta prórroga y penales).</p>
+      <p class="sub">Por cada cruce: marcador del <b>tiempo reglamentario (90′)</b> y <b>quién avanza</b> (cuenta prórroga y penales). Puedes guardar <b>de a un partido</b>: llena el que quieras y guarda; vuelve luego por los demás antes de que cierre cada uno.</p>
       <div id="cruces"></div>
     </div>
 
@@ -778,22 +778,30 @@ document.getElementById("guardar").addEventListener("click", async ()=>{
   // cruces: los partidos CERRADOS conservan lo ya guardado; los ABIERTOS toman lo de pantalla
   const cruces = cfg.fases[fk].cruces;
   const previos = (preds[idPred(email,fk)]?.picks) || {};
-  const picks = {}; let faltan=0, hayAbiertoEditable=false;
+  const picks = {}; let hayAbiertoEditable=false, incompletos=[], llenadosAhora=0;
   cruces.forEach((cr,i)=>{
     if (!(cr.local && cr.visita)) return;
     const id=i+1;
     if (cruceCerrado(fk,i)){
-      // partido cerrado: se mantiene exactamente lo que ya tenía (no se puede cambiar)
+      // partido cerrado: se conserva lo que ya tenía (no se puede cambiar)
       if (previos[id]) picks[id] = previos[id];
       return;
     }
     hayAbiertoEditable = true;
     const ps = pickState[id]||{};
-    if (ps.gh==="" || ps.gh==null || ps.ga==="" || ps.ga==null || !ps.avanza){ faltan++; }
-    picks[id] = { gh: ps.gh===""?"":+ps.gh, ga: ps.ga===""?"":+ps.ga, avanza: ps.avanza||"" };
+    const tieneMarcador = (ps.gh!=="" && ps.gh!=null) && (ps.ga!=="" && ps.ga!=null);
+    const tieneAlgo = (ps.gh!=="" && ps.gh!=null) || (ps.ga!=="" && ps.ga!=null) || !!ps.avanza;
+    if (tieneMarcador && ps.avanza){            // partido completo -> se guarda
+      picks[id] = { gh:+ps.gh, ga:+ps.ga, avanza:ps.avanza }; llenadosAhora++;
+    } else if (tieneAlgo){                        // partido a medias -> avisar
+      incompletos.push(id);
+    } else if (previos[id]){                       // vacío ahora pero ya tenía algo -> se conserva
+      picks[id] = previos[id];
+    }
   });
   if (!hayAbiertoEditable){ msg.textContent="Todos los partidos de esta fase ya cerraron: no hay nada que se pueda cambiar."; return; }
-  if (faltan){ msg.textContent = `Te faltan ${faltan} partido(s) abierto(s): marcador y quién avanza.`; return; }
+  if (incompletos.length){ msg.textContent = `Tienes partido(s) a medias: #${incompletos.join(", #")}. Complétalos (marcador y quién avanza) o déjalos totalmente vacíos para guardar el resto.`; return; }
+  if (Object.keys(picks).length===0){ msg.textContent="Llena al menos un partido (marcador y quién avanza) para guardar."; return; }
 
   // --- control de PIN: verificar el existente o crear el primero ---
   const pinIn = (document.getElementById("pPin").value || "").trim();
