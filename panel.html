@@ -154,6 +154,18 @@ tr.rank1 td,tr.rank2 td,tr.rank3 td{font-weight:600}
 .live-dot{width:10px;height:10px;border-radius:50%;background:#e23b2e;box-shadow:0 0 0 0 rgba(226,59,46,.6);animation:livePulse 1.4s infinite}
 @keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(226,59,46,.55)}70%{box-shadow:0 0 0 10px rgba(226,59,46,0)}100%{box-shadow:0 0 0 0 rgba(226,59,46,0)}}
 
+/* ---------- recuadro "tu pronóstico" bajo la barra en vivo ---------- */
+.live-pred{max-width:980px;margin:10px auto 0;padding:0 16px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.lp-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 16px;min-width:280px;box-shadow:var(--shadow-sm)}
+.lp-head{display:flex;align-items:center;gap:7px;font-size:.86em;font-weight:bold;color:var(--navy);margin-bottom:9px}
+.lp-head .lp-name{margin-left:auto;font-weight:normal;color:var(--muted);font-size:.92em}
+.lp-score{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:9px}
+.lp-score .lp-team{font-weight:bold;color:var(--navy)}
+.lp-box{min-width:32px;height:32px;border-radius:8px;background:#eaf2fb;color:#185fa5;display:inline-flex;align-items:center;justify-content:center;font-weight:bold}
+.lp-dash{color:var(--muted)}
+.lp-av{text-align:center;font-size:.85em;background:linear-gradient(135deg,#eafaf0,#d8f5e4);color:#0a6b39;padding:4px 12px;border-radius:999px;display:inline-block}
+.lp-avwrap{text-align:center}
+
 .lock{background:#fff7d6;border:1px solid #f0dd9b;color:#6a5200;border-radius:12px;padding:10px 13px;font-size:.9em;margin:8px 0}
 .muted{color:var(--muted);font-size:.88em}
 .hide{display:none !important}
@@ -195,6 +207,7 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
 </nav>
 
 <div id="liveStrip" class="live-strip hide"></div>
+<div id="livePred" class="live-pred hide"></div>
 
 <!-- ============ PARTICIPAR ============ -->
 <section id="participar" class="view active">
@@ -437,6 +450,48 @@ const PUNTOS_DEFAULT = {
 const BONOS_DEFAULT = {
   campeon: { equipo:"", pts:5 },   // +5 al que acertó el campeón (elegido en la fase de grupos)
 };
+
+// ============================================================
+//  MAPA DE AVANCE DEL BRACKET (Mundial 2026 — orden de este torneo)
+//  Al marcar el ganador de un partido, su equipo pasa solo al cruce
+//  que le toca de la siguiente fase (local/visita). En semis, el
+//  perdedor pasa al partido por el 3er lugar.
+// ============================================================
+const AVANCE = {
+  "16avos": {
+    0:{win:["octavos",1,"local"]},  1:{win:["octavos",2,"local"]},
+    2:{win:["octavos",0,"local"]},  3:{win:["octavos",1,"visita"]},
+    4:{win:["octavos",2,"visita"]}, 5:{win:["octavos",0,"visita"]},
+    6:{win:["octavos",3,"local"]},  7:{win:["octavos",3,"visita"]},
+    8:{win:["octavos",5,"visita"]}, 9:{win:["octavos",5,"local"]},
+    10:{win:["octavos",4,"visita"]},11:{win:["octavos",4,"local"]},
+    12:{win:["octavos",7,"local"]}, 13:{win:["octavos",6,"visita"]},
+    14:{win:["octavos",6,"local"]}, 15:{win:["octavos",7,"visita"]}
+  },
+  "octavos": {
+    0:{win:["cuartos",0,"local"]}, 1:{win:["cuartos",0,"visita"]},
+    2:{win:["cuartos",2,"local"]}, 3:{win:["cuartos",2,"visita"]},
+    4:{win:["cuartos",1,"local"]}, 5:{win:["cuartos",1,"visita"]},
+    6:{win:["cuartos",3,"local"]}, 7:{win:["cuartos",3,"visita"]}
+  },
+  "cuartos": {
+    0:{win:["semis",0,"local"]}, 1:{win:["semis",0,"visita"]},
+    2:{win:["semis",1,"local"]}, 3:{win:["semis",1,"visita"]}
+  },
+  "semis": {
+    0:{win:["final",0,"local"],  lose:["tercer",0,"local"]},
+    1:{win:["final",0,"visita"], lose:["tercer",0,"visita"]}
+  }
+};
+// coloca (o limpia) al equipo en la fase siguiente según el ganador marcado
+function autoAvance(c, fase, idx, avanza, cruce){
+  const rule = AVANCE[fase] && AVANCE[fase][idx];
+  if (!rule || !cruce) return;
+  const gana  = avanza==='L' ? cruce.local  : (avanza==='V' ? cruce.visita : "");
+  const pierde= avanza==='L' ? cruce.visita : (avanza==='V' ? cruce.local  : "");
+  if (rule.win){ const [df,di,lado]=rule.win; if(c.fases[df]&&c.fases[df].cruces[di]) c.fases[df].cruces[di][lado]=gana; }
+  if (rule.lose){ const [lf,li,ll]=rule.lose; if(c.fases[lf]&&c.fases[lf].cruces[li]) c.fases[lf].cruces[li][ll]=pierde; }
+}
 
 function configInicial(){
   const cfg = { faseActual:"16avos", fases:{}, puntos:JSON.parse(JSON.stringify(PUNTOS_DEFAULT)),
@@ -877,6 +932,7 @@ function actualizarPinUI(){
 }
 function prefillSiExiste(){
   actualizarPinUI();
+  renderLive();   // refresca el recuadro "tu pronóstico" al cambiar el correo
   const email = emailActual(), fk = cfg?.faseActual; if (!email || !fk) return;
   const pr = preds[idPred(email,fk)];
   const sal = document.getElementById("pSaludo");
@@ -984,25 +1040,50 @@ function renderMiResumen(){
    ============================================================ */
 function renderLive(){
   const strip = document.getElementById("liveStrip");
-  if (!strip || !cfg){ if(strip) strip.classList.add("hide"); return; }
+  const predBox = document.getElementById("livePred");
+  if (!strip || !cfg){ if(strip) strip.classList.add("hide"); if(predBox) predBox.classList.add("hide"); return; }
   const fk = cfg.faseActual;
   const res = cfg.resultados[fk] || {};
   const cruces = cfg.fases[fk].cruces || [];
-  const vivos = [];
+  const vivos = [];       // índices de partidos en vivo
+  const chips = [];
   cruces.forEach((cr,i)=>{
     if (!(cr.local && cr.visita)) return;
     const r = res[i+1] || {};
-    // "en vivo" = ya cerró (o ya tiene marcador) Y todavía no se define quién clasificó
     const arranco = cruceCerrado(fk,i) || lleno(r.gh) || lleno(r.ga);
     if (arranco && !r.avanza){
-      const gh = lleno(r.gh) ? r.gh : "–";
-      const ga = lleno(r.ga) ? r.ga : "–";
-      vivos.push(`<span class="live-chip"><span class="live-dot"></span> EN VIVO · <b>${esc(cr.local)}&nbsp;&nbsp;${gh} - ${ga}&nbsp;&nbsp;${esc(cr.visita)}</b></span>`);
+      vivos.push({i, cr});
+      const gh = lleno(r.gh) ? r.gh : "–", ga = lleno(r.ga) ? r.ga : "–";
+      chips.push(`<span class="live-chip"><span class="live-dot"></span> EN VIVO · <b>${esc(cr.local)}&nbsp;&nbsp;${gh} - ${ga}&nbsp;&nbsp;${esc(cr.visita)}</b></span>`);
     }
   });
-  if (!vivos.length){ strip.classList.add("hide"); strip.innerHTML=""; return; }
-  strip.classList.remove("hide");
-  strip.innerHTML = vivos.join("");
+  // barra en vivo
+  if (!chips.length){ strip.classList.add("hide"); strip.innerHTML=""; }
+  else { strip.classList.remove("hide"); strip.innerHTML = chips.join(""); }
+
+  // recuadro "tu pronóstico" (solo si el participante puso su correo y pronosticó ese partido)
+  const email = emailActual();
+  const nombre = (typeof elNombre!=="undefined" && elNombre) ? elNombre.value.trim() : "";
+  const mis = email ? (preds[idPred(email,fk)]?.picks || null) : null;
+  const cards = [];
+  if (mis){
+    vivos.forEach(({i,cr})=>{
+      const p = mis[i+1];
+      if (!p || !(lleno(p.gh) && lleno(p.ga))) return;
+      const av = p.avanza==='L' ? cr.local : (p.avanza==='V' ? cr.visita : "");
+      cards.push(`<div class="lp-card">
+        <div class="lp-head">🖊️ Tu pronóstico ${nombre?`<span class="lp-name">${esc(nombre)}</span>`:""}</div>
+        <div class="lp-score">
+          <span class="lp-team">${esc(cr.local)}</span>
+          <span class="lp-box">${p.gh}</span><span class="lp-dash">-</span><span class="lp-box">${p.ga}</span>
+          <span class="lp-team">${esc(cr.visita)}</span>
+        </div>
+        ${av?`<div class="lp-avwrap"><span class="lp-av">✓ Dijiste que avanza: ${esc(av)}</span></div>`:""}
+      </div>`);
+    });
+  }
+  if (!cards.length){ predBox.classList.add("hide"); predBox.innerHTML=""; }
+  else { predBox.classList.remove("hide"); predBox.innerHTML = cards.join(""); }
 }
 function renderPuntajeInfo(){
   const cont = document.getElementById("puntajeInfo"); if(!cont || !cfg) return;
@@ -1212,7 +1293,9 @@ document.getElementById("admResultados").addEventListener("click", async ev=>{
   c.resultados[fk][id].avanza = yaEstaba ? "" : b.dataset.av;   // volver a tocar = quitar selección
   b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("sel"));
   if (!yaEstaba) b.classList.add("sel");
-  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); renderLive(); }
+  // avance automático: coloca al ganador (y al perdedor de semis) en la fase siguiente
+  autoAvance(c, fk, +id - 1, c.resultados[fk][id].avanza, cfg.fases[fk].cruces[+id - 1]);
+  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); renderLive(); renderAdmin(); }
   catch(e){ alert(e.message); }
 });
 
