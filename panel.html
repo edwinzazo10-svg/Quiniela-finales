@@ -148,6 +148,12 @@ tr.rank1 td,tr.rank2 td,tr.rank3 td{font-weight:600}
 #tTabla.animar tbody tr{animation:rowin .4s ease both}
 .llave-cols.animar .llave-col{animation:colin .45s ease both}
 
+/* ---------- barra EN VIVO ---------- */
+.live-strip{max-width:980px;margin:14px auto 0;padding:0 16px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.live-chip{display:inline-flex;align-items:center;gap:9px;background:linear-gradient(135deg,#fff1f0,#ffe3e0);border:1px solid #f3b0a9;color:#a3271d;font-weight:bold;padding:9px 16px;border-radius:999px;box-shadow:0 4px 14px rgba(200,40,20,.18);font-size:.98em}
+.live-dot{width:10px;height:10px;border-radius:50%;background:#e23b2e;box-shadow:0 0 0 0 rgba(226,59,46,.6);animation:livePulse 1.4s infinite}
+@keyframes livePulse{0%{box-shadow:0 0 0 0 rgba(226,59,46,.55)}70%{box-shadow:0 0 0 10px rgba(226,59,46,0)}100%{box-shadow:0 0 0 0 rgba(226,59,46,0)}}
+
 .lock{background:#fff7d6;border:1px solid #f0dd9b;color:#6a5200;border-radius:12px;padding:10px 13px;font-size:.9em;margin:8px 0}
 .muted{color:var(--muted);font-size:.88em}
 .hide{display:none !important}
@@ -187,6 +193,8 @@ details.adm summary{cursor:pointer;font-weight:bold;color:var(--navy)}
   <button data-view="llave">🏆 Clasificados</button>
   <button data-view="admin">🛠️ Organizador</button>
 </nav>
+
+<div id="liveStrip" class="live-strip hide"></div>
 
 <!-- ============ PARTICIPAR ============ -->
 <section id="participar" class="view active">
@@ -974,6 +982,28 @@ function renderMiResumen(){
 /* ============================================================
    VISTA: TABLA EN VIVO
    ============================================================ */
+function renderLive(){
+  const strip = document.getElementById("liveStrip");
+  if (!strip || !cfg){ if(strip) strip.classList.add("hide"); return; }
+  const fk = cfg.faseActual;
+  const res = cfg.resultados[fk] || {};
+  const cruces = cfg.fases[fk].cruces || [];
+  const vivos = [];
+  cruces.forEach((cr,i)=>{
+    if (!(cr.local && cr.visita)) return;
+    const r = res[i+1] || {};
+    // "en vivo" = ya cerró (o ya tiene marcador) Y todavía no se define quién clasificó
+    const arranco = cruceCerrado(fk,i) || lleno(r.gh) || lleno(r.ga);
+    if (arranco && !r.avanza){
+      const gh = lleno(r.gh) ? r.gh : "–";
+      const ga = lleno(r.ga) ? r.ga : "–";
+      vivos.push(`<span class="live-chip"><span class="live-dot"></span> EN VIVO · <b>${esc(cr.local)}&nbsp;&nbsp;${gh} - ${ga}&nbsp;&nbsp;${esc(cr.visita)}</b></span>`);
+    }
+  });
+  if (!vivos.length){ strip.classList.add("hide"); strip.innerHTML=""; return; }
+  strip.classList.remove("hide");
+  strip.innerHTML = vivos.join("");
+}
 function renderPuntajeInfo(){
   const cont = document.getElementById("puntajeInfo"); if(!cont || !cfg) return;
   const p = cfg.puntos[cfg.faseActual] || PUNTOS_DEFAULT["16avos"];
@@ -1171,7 +1201,7 @@ document.getElementById("admResultados").addEventListener("input", async ev=>{
   const c={...cfg}; c.resultados[fk] ??= {}; c.resultados[fk][id] ??= {gh:"",ga:"",avanza:""};
   c.resultados[fk][id][el.dataset.s] = el.value===""?"":+el.value;
   el.classList.toggle("filled", el.value!=="");
-  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); }
+  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); renderLive(); }
   catch(e){ alert(e.message); }
 });
 document.getElementById("admResultados").addEventListener("click", async ev=>{
@@ -1182,7 +1212,7 @@ document.getElementById("admResultados").addEventListener("click", async ev=>{
   c.resultados[fk][id].avanza = yaEstaba ? "" : b.dataset.av;   // volver a tocar = quitar selección
   b.parentElement.querySelectorAll("button").forEach(x=>x.classList.remove("sel"));
   if (!yaEstaba) b.classList.add("sel");
-  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); }
+  try{ await Store.persist(c); renderTabla(); renderMiResumen(); renderAdminParticipantes(); renderLive(); }
   catch(e){ alert(e.message); }
 });
 
@@ -1548,8 +1578,8 @@ document.querySelectorAll("nav.tabs button").forEach(b=>{
   });
 });
 
-function renderAll(){ actualizarLockUI(); renderParticipar(); renderTabla(); renderAdmin(); renderLlave(); prefillSiExiste(); renderMiResumen(); }
-function renderSinParticipar(){ actualizarLockUI(); renderTabla(); renderAdmin(); renderLlave(); renderMiResumen(); }
+function renderAll(){ actualizarLockUI(); renderParticipar(); renderTabla(); renderAdmin(); renderLlave(); renderLive(); prefillSiExiste(); renderMiResumen(); }
+function renderSinParticipar(){ actualizarLockUI(); renderTabla(); renderAdmin(); renderLlave(); renderLive(); renderMiResumen(); }
 
 let _ultimaFirmaPart = "";
 Store.onConfig((c, soloTabla)=>{
@@ -1563,7 +1593,10 @@ Store.onPreds(()=> { renderTabla(); renderMiResumen(); });
 Store.init();
 
 // refresca el countdown/cierre cada minuto
-setInterval(()=>{ if(document.getElementById("participar").classList.contains("active")) renderParticipar(); }, 60000);
+setInterval(()=>{
+  renderLive();
+  if(document.getElementById("participar").classList.contains("active")) renderParticipar();
+}, 30000);
 </script>
 </body>
 </html>
